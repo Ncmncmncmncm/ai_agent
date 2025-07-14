@@ -10,6 +10,7 @@ from functions.get_file_content import schema_get_file_content
 from functions.write_file_content import schema_write_file
 from functions.run_python import schema_run_python_file
 
+from functions.call_function import call_function
 
 load_dotenv()
 api_key = os.environ.get('GEMINI_API_KEY')
@@ -57,7 +58,8 @@ config=types.GenerateContentConfig(
 response = client.models.generate_content(
     model = model_name,
     contents = messages,
-    config=config,
+    config = config,
+
 )
 
 if is_verbose == True:
@@ -69,8 +71,20 @@ if is_verbose == True:
 if response.function_calls:
     # Loop through each function call (there might be multiple)
     for function_call_part in response.function_calls:
-        print(f"Calling function: {function_call_part.name}({function_call_part.args})")
+        # Call your function, passing the command-line verbose flag
+        function_call_result = call_function(function_call_part, verbose=is_verbose)
+
+        # Check the structure of the returned content
+        if not (function_call_result and
+                function_call_result.parts and
+                len(function_call_result.parts) > 0 and
+                function_call_result.parts[0].function_response and
+                function_call_result.parts[0].function_response.response is not None):
+            raise RuntimeError("Fatal error: function_call_result does not contain a valid function response.")
+
+        # If verbose, print the result of the function call
+        if is_verbose: # This is a simpler way to write if is_verbose == True
+            print(f"-> {function_call_result.parts[0].function_response.response}")
 else:
     # If no function calls, print the text response as normal
     print(response.text)
-
