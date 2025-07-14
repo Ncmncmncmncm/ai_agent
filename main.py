@@ -55,36 +55,45 @@ config=types.GenerateContentConfig(
     system_instruction=system_prompt
 )
 
-response = client.models.generate_content(
-    model = model_name,
-    contents = messages,
-    config = config,
+done = False
+for _ in range(20):
+    response = client.models.generate_content(
+        model=model_name,
+        contents=messages,
+        config=config,
+    )
 
-)
+    for candidate in response.candidates:
+        # If candidate.text exists, use it:
+        if hasattr(candidate, "text") and candidate.text:
+            part = {"text": candidate.text}
+            messages.append(types.Content(role="model", parts=[part]))
+            print(candidate.text)
+            done = True
+            break
+        else:
+            # Some candidates might have content as list of Parts or similar
+            messages.append(candidate.content)
+    if done:
+        break
 
-if is_verbose == True:
-    print("User prompt:", prompt)
-    print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-    print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+    # Check if the response contains function calls
+    if response.function_calls:
+        # Loop through each function call (there might be multiple)
+        for function_call_part in response.function_calls:
+            # Call your function, passing the command-line verbose flag
+            function_call_result = call_function(function_call_part, verbose=is_verbose)
 
-# Check if the response contains function calls
-if response.function_calls:
-    # Loop through each function call (there might be multiple)
-    for function_call_part in response.function_calls:
-        # Call your function, passing the command-line verbose flag
-        function_call_result = call_function(function_call_part, verbose=is_verbose)
+            messages.append(types.Content(role="tool", parts=function_call_result.parts))
 
-        # Check the structure of the returned content
-        if not (function_call_result and
-                function_call_result.parts and
-                len(function_call_result.parts) > 0 and
-                function_call_result.parts[0].function_response and
-                function_call_result.parts[0].function_response.response is not None):
-            raise RuntimeError("Fatal error: function_call_result does not contain a valid function response.")
+            # Check the structure of the returned content
+            if not (function_call_result and
+                    function_call_result.parts and
+                    len(function_call_result.parts) > 0 and
+                    function_call_result.parts[0].function_response and
+                    function_call_result.parts[0].function_response.response is not None):
+                raise RuntimeError("Fatal error: function_call_result does not contain a valid function response.")
 
-        # If verbose, print the result of the function call
-        if is_verbose: # This is a simpler way to write if is_verbose == True
-            print(f"-> {function_call_result.parts[0].function_response.response}")
-else:
-    # If no function calls, print the text response as normal
-    print(response.text)
+            # If verbose, print the result of the function call
+            if is_verbose: # This is a simpler way to write if is_verbose == True
+                print(f"-> {function_call_result.parts[0].function_response.response}")
